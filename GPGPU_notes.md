@@ -34,17 +34,19 @@ This means operations such as branches or jumps are *permitted* but **highly** d
 OpenACC does not generate many warnings that tell you if something is wrong, because it is just asking the compiler to figure out how to create kernels for the `#pragma acc` clauses. For example, if the module is not loaded or the `pragma=acc` argument is not given, the compiler will just ignore the `#pragma acc` clauses.
 
 ### CUDA
-We have a CPU host and this host will send code to GPU device. This code will be under `__global__` function
+We have a CPU host and this host will send code to GPU device. This code will be under `__global__` function. 
 
-![alt text](./CUDA_Diag.png "Logo Title Text 1")
+![alt text](https://raw.githubusercontent.com/felipegb94/HPC_Workshop/master/images/CUDA_Diagram.png "Logo Title Text 1")
 
 
 #### Constructs
 ##### `__global__`
 ######Syntax
+
+Code to be executed in the device. This code is completely isolated from the CPU, so it can only access elements that are copied into the GPU memory. These elements are given as arguments in the function call. See
+
 `__global__ void functionName(...)`
 
-Many workers are created to accelerate the `parallel` region.
 ##### `__host__`
 ######Syntax
 
@@ -53,7 +55,11 @@ Many workers are created to accelerate the `parallel` region.
 ##### `__device__`
 ######Syntax
 
+The `__device__` keyword let's us create function that are callable from threads on the device. This means that the code inside `__global__` kernels will be able to call functions that have the `__device__` keyword in their header. 
+
 `__device__ void functionName(...)`
+
+
 
 
 
@@ -74,7 +80,66 @@ Many workers are created to accelerate the `parallel` region.
 ##### loop
 `loop` constructs mark a loop which will be either split into `kernels` or other clause types depending on compiler analysis unless explicitly defined.
 
-## Common Clauses
+## Clauses and examples
+### CUDA
+
+#### Calculating area under the curve
+This example calculates the area under the quarter of a circle.
+
+##### Kernel
+This is the portion of the code that will be executed 
+
+ ```
+ __global__ void calculateAreas(int offset, const int numRects, const double width,
+    double *dev_areas) {
+  const int threadId = threadIdx.x + offset;
+  const double x = (threadId * width);
+  const double heightSq = (1.0 - (x * x));
+  const double height =
+    /* Prevent nan value for sqrt() */
+    (heightSq < DBL_EPSILON) ? (0.0) : (sqrt(heightSq));
+
+  if (threadId < numRects) {
+    dev_areas[threadId] = (width * height);
+  }
+}
+ ```
+
+##### Allocate memory
+
+```
+void calculateArea(const int numRects, double *area) {
+  // Allocate mem
+  double *areas = (double*)malloc(numRects * sizeof(double));
+  double *dev_areas;
+  int i = 0;
+  cudaError_t err;
+
+  if (areas == NULL) {
+    fprintf(stderr, "malloc failed!\n");
+  }
+
+  err = cudaMalloc((void**)&dev_areas, (numRects * sizeof(double)));
+
+  if (err != cudaSuccess) {
+    fprintf(stderr, "cudaMalloc failed: %s\n", cudaGetErrorString(err));
+  }
+``` 
+
+
+#### Getting device information
+
+Getting the device information is useful whenever we are trying to figure out the maximum number of threads the device can handle.
+
+```
+  int device;
+  cudaGetDevice(&device);
+  cudaDeviceProp prop;
+  cudaGetDeviceProperties(&prop, device); 
+  printf("Max number of threads per block = %i \n", prop.maxThreadsPerBlock);
+```
+
+
 ### OpenACC
 
 #### copy
