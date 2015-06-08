@@ -84,21 +84,26 @@ Many workers are created to accelerate the `parallel` region.
 ### CUDA
 
 #### Calculating area under the curve
-This example calculates the area under the quarter of a circle.
+This example estimates the area under a quarter of a circle. This is done by calculating the area of many rectangles like in the picture below. Each area is calculated by one thread in the GPU.
 
-##### Kernel
-This is the portion of the code that will be executed 
+![alt text](https://raw.githubusercontent.com/felipegb94/HPC_Workshop/master/images/pi.JPG "Logo Title Text 1")
+
+##### Kernel function
+This is the portion of the code that will be executed inside the GPU. We will use the id of each thread to figure out which rectangle that thread will be calculating.
 
  ```
- __global__ void calculateAreas(int offset, const int numRects, const double width,
+ __global__ void calculateAreas(const int numRects, const double width,
     double *dev_areas) {
-  const int threadId = threadIdx.x + offset;
+  const int threadId = threadIdx.x;
+  // Calculate the xCoordinate where the rectangle will start.
   const double x = (threadId * width);
+  // Use unit circle equation to calculate height of rectangle x^2 + y^2 = 1
   const double heightSq = (1.0 - (x * x));
   const double height =
     /* Prevent nan value for sqrt() */
     (heightSq < DBL_EPSILON) ? (0.0) : (sqrt(heightSq));
 
+  // Store value in the memory allocated. 
   if (threadId < numRects) {
     dev_areas[threadId] = (width * height);
   }
@@ -111,7 +116,7 @@ This is the portion of the code that will be executed
 void calculateArea(const int numRects, double *area) {
   // Allocate mem
   double *areas = (double*)malloc(numRects * sizeof(double));
-  double *dev_areas;
+  double *device_areas;
   int i = 0;
   cudaError_t err;
 
@@ -125,6 +130,34 @@ void calculateArea(const int numRects, double *area) {
     fprintf(stderr, "cudaMalloc failed: %s\n", cudaGetErrorString(err));
   }
 ``` 
+
+##### Kernel call and finalize
+Note that in the kernel call we pass in the pointer to the memory we allocated in the GPU. `<<<1, numRects>>>`, in this example `numRects` is specifying the number of threads that should be used. Since we are calculating an specific number of rectangles we onyl need that many threads since each one of them will calculate one of the areas.
+
+
+```
+	width = 1.0/numRects;
+	// Kernel call
+   calculateAreas<<<1, numRects>>>(numRects, width, device_areas);
+   
+   // Copy everything that was calculated in the GPU to the CPU
+   err = cudaMemcpy(areas, device_areas, (numRects * sizeof(double)), cudaMemcpyDeviceToHost);
+
+	if (err != cudaSuccess) {
+   		fprintf(stderr, "cudaMalloc failed: %s\n", cudaGetErrorString(err));
+  }
+
+	// Sum areas
+	(*area) = 0.0;
+	for (i = 0; i < numRects; i++) {
+   		(*area) += areas[i];
+  	}
+  	
+  	// Free memory.
+  	cudaFree(device_areas);
+	free(areas);
+
+```
 
 
 #### Getting device information
